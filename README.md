@@ -1,2 +1,2 @@
 # Reading-Comp-PCA-Machine
-For access to data, please contact me at natalie.huerta@vanderbilt.edu.
+This analysis used a principle component analysis and a machine learning approach to determine if variables related to word reading, language comprehension and executive function predicted reading comprehension of 8-12 year-old readers. R was used for all analysis, specifically the tidyvrse, ggplot2, caret and psych packages. For access to data, please contact me at natalie.huerta@vanderbilt.edu.
