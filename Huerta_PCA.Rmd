@@ -1,0 +1,373 @@
+---
+title: "Principle Component Analysis"
+author: "Natalie Huerta"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+    toc: yes
+    number_sections: yes
+---
+```{r}
+rm(list=ls(all=TRUE))
+```
+
+# Introduction 
+
+Reading comprehension has been shown to predict academic achievement in school as well success later in life (Locasio et al., 2010; Rabiner et al., 2016). As a result, much research has been devoted to understanding reading comprehension and its underlying mechanisms. The Simple View of Reading (SVR; Gough & Tunmer, 1986) posited that reading comprehension was the product of word reading and language comprehension. While the simple view is widely accepted, additions to the model have been proposed (Duke & Cartwright, 2021; Cutting et al., 2015) to include other cognitive or behavioral components such as executive function. Executive function is a set of processes that regulate cognitive, behavioral, and emotional tasks and have been shown to contribute to reading outcomes (Aboud et al., 2018; Cutting et al., 2015). This data analysis aimed to use the machine learning methods of 10-fold cross validation and feature selection to produce a model predicting reading comprehension. The goal was to determine if reading comprehension was best predicted by decoding and language skills alone, or if executive function was a necessary addition to the model.  
+
+
+**Research Question**: 
+1. Can variables related to decoding, language comprehension, executive function be reduced into component scores?
+2. If so, are the resulting components predictive of reading comprehension in 8–12-year-old readers? 
+
+# Data 
+
+This data was collected in the Education Brain and Science Lab at Vanderbilt as part of a study investigating the cognitive and neurological underpinnings of reading comprehension in 8–12-year-olds (n = 274). The data reflect a portion of the behavioral and survey data collected.  
+
+## The Variables 
+
+The variables of interest for the analyses in this paper were: 
+
+* **Reading Comprehension**: Reading comprehension is the ability to show an understanding of written text and was measured by the Woodcock-Johnson III (WJ-III) Passage Comprehension sub test. Reading comprehension was the outcome variable in the analysis. 
+
+* **Decoding**: Decoding is the ability to read words and nonsense words accurately. 
+Measures used that are thought of as measures of decoding included:
+
+  * Woodcock-Johnson III 
+    * Word Attack measured students' ability to read progressively challenging nonsense words in isolation.  
+    * Letter Word ID measured students' ability to name letters and read progressively challenging real words in isolation. 
+    
+  * Test of Word Reading Efficiency (TOWRE)
+    * The Phonemic Decoding sub test asked student to read progressively challenging nonsense words in isolation. 
+    * The Sight Word sub test asked students to read progresisvely challenging regular words.  
+    
+* **Language Comprehension**: Language comprehension as talked about in the Simple View of Reading is the ability to understand language and includes listening comprehension skills, vocabulary, and other verbal abilities. Measures used that are thought of as measures of language included:
+
+  * Wechsler Abbreviated Scale of Intelligence (WASI) 
+    * Verbal IQ was a composite score made up of the Vocabulary and Similarities subtests.
+    * WASI_Vocabulary asked students to name items in pictures and define terms presented orally.
+  
+  * Test of Language Competence- Expanded (TLC-E): 
+    * The Listening Comprehension sub test asked students to make inferences based on causal relationships introduced in short passages read aloud. 
+    * The Ambiguous Sentences sub test asked students to recognize and determine alternate meanings of words based on the context provided. 
+
+  * Test of Word Knowledge (TOWK):
+    * The Expressive Vocabulary sub test asked students to provide names for pictures provided. 
+    * The Receptive Vocabulary sub test asked students to point to the picture, out of four choices, that matched the word given.  
+    * The Synonyms and Figurative Language sub test  asked students to identify words that are synonyms and provide explanations for figurative language.
+    
+  * Test of Morphological Structure
+    * The Morphological Derivation sub test provided students with a morphological base form and then asked students to fill in the blank of a sentence using the morphologically derived word.
+    * The Morphological Decomposition sub test provided students with a morphologically derived stem and then a sentence context that required them to fill in the blank with the morphological base form. 
+    * The Morphological Relatedness subtest asked students to idntify words that were related to one another. 
+ 
+  * Woodcock-Johnson
+   * The Analysis-Synthesis sub test asked students to draw conclusions from stated situations and is thought of as a measure of deductive or algorithmic reasoning. 
+
+* **Executive Function (EF)**: Executive function is a set of mental processes that regulate cognition, emotion, and behavior. Measures used that are thought of as measures of executive function included:
+
+  * Delis-Kaplan Executive Function System (D-KEFS). 
+    * The Card Sorting composite involved activities where students had to create, identify and shift between card categories. It measured cognitive flexibility and inhibition, two generally agreed upon major elements of executive function.  
+    * The Twenty Questions sub test asked students to ask yes or no questions to guess an object and assessed abstract reasonoing and cognitive felxibility. 
+
+  * Weschler Intelligence Scale for Children IV (WISC-IV) 
+    * The Elithorn Mazes sub test asked students to complete a series of progressively challenging mazes, measuring planning and inhibition.  
+    * The Spatial Span sub test asked students to reproduce a sequence of tapped blocks, measuring working memory.
+
+  * Behavior Rating Inventory of Executive Function (BRIEF)
+    * The BRIEF was a rating scale completed by a parent that provided ratings on cognitive, emotional, and behavioral regulation. The score used in the analysis was the Global Executive index, which was a composite score of all three areas of EF.
+
+## Wrangle Data 
+
+The data was wrangled by calling in the file and selecting the outcome variable and predictor variables of interest. These were predictors related to decoding, language comprehension and executive function. All blanks and NaN were replaced with NA. Then the tibble was filtered to include only observations without NA in any of the predictors or the outcome variable. This resulted in 223 observations of 21 variables. The outcome variable was relocated to be the first column in the tibble, and variables were renamed for readability and easier visualization in later steps. The tibble structure was checked and all variables were characters so they were all changed to numeric. 
+
+```{r}
+library(tidyverse)
+RCV_pca <- read_csv("RCV_Dim_Red.csv") %>% 
+  select(-one_of("tq_tqa_ss", "participant_id","baseline_wpm_stdev", "vocab_total_correct_percent","baseline_mean_sec", "decoding_total_correct_percent", "gmrt4_ess")) %>% #-one_of means that it selected everything in the file except the ones listed
+   mutate(across(everything(), ~ifelse(.=="", NA, as.character(.))))%>% #convert empty cells to NA
+   mutate(across(everything(), ~ifelse(.=="NaN", NA, as.character(.))))%>% #had some weird NaN's in a few columns, so this turned them into NA's
+  filter(across(.cols = everything(),.fns = ~ !is.na(.))) %>%  #Remove any observations with an NA in the outcome variable or predictor variables
+   rename(Verbal_IQ = iq_verbal, WASI_Vocabulary = iqvts, WJ_Reading_Comprehension = wjiii_comp_ss, Letter_Word_ID = lw_id_ss, Word_Attack = wa_ss, Ambiguous_Sentences = tlc_as_ss, Inferences = tlc_lc_ss, Receptive_Vocabulary = towk_rv_ss, Expressive_Vocabulary = towk_ev_ss, Synonyms = towk_s_ss, EF_Card_Sorting = sorting_cd_comp, EF_Mazes = wiscepmtss, EF_BRIEF = bpgei, Synthesis = as_ss, TOWRE_Decoding = towreswess, TOWRE_Sight_Words = towrepdess, Morph_Derivation = tms_d, Morph_Decomposition = tms_dc, Morph_Relatedness = mrt, Spatial_Span = spatial_span_ss, Twenty_Questions = tq_was_ss) %>% #change names of variables 
+   relocate(WJ_Reading_Comprehension, .before = EF_BRIEF)#move outcome variable to be listed first in the tibble so it is easier to see in correlation visualizations later
+str(RCV_pca) #check structure for all numeric
+
+#everything is a character, so make numeric
+ RCV_pca_2<- RCV_pca %>% 
+   mutate_at(c(1:21),as.numeric) #if character in columns 1:21, change to numeric
+
+   str(RCV_pca_2) #all numeric so now all good
+```
+# Principle Component Analysis
+The goal of the principle component analysis(PCA) was to determine if variables related to decoding, language comprehension, executive function could be reduced into components rather than individual measures. Running a PCA helped eliminate excess variables that could have resulted in overfitting the model or increased the liklihood of multicollinearity. The steps used are outliined below with additional details located with each step.   
+
+## Steps in running a PCA
+
+1. Check for multicollinearity between variables (r > .899)
+2. Scale variables
+3. Visualize the data
+4. Bartlett's test including sample size
+5. KMO on the data (look for variables below .5 and remove)
+6. Baseline PCA to check scree plot, SS loadings above 1, and normal distribution of variables
+7. Check that residuals are normally distributed
+8. Run PCA with selected number of components based on interpretation of scree plot and SS loadings
+9. Interpret and name components 
+10. Send component scores to csv
+
+## Correlations for Strong Multicollinearity
+Correlations of all variables were run to check for overly strong correlations. It was assumed that there would be high correlations given that many of these variables were supposed to be measuring very similar constructs. Variables that were correlated above .899 were removed because that indicated that the variables were essentially the same. The WASI Vocabulary subtest and Verbal IQ were correlated above .899, so WASI Vocab was removed. Woodcock_Johnson_Comprehension was also removed because it was the singular outcome variable and did not need to be included in the rest of the PCA steps. Correlations were run again to double check that they all were below .899. 
+```{r}
+corr_RCV_pca <- cor(RCV_pca_2)#get correlations of whole tibble
+
+corr_RCV_pca # take a look
+
+write.csv(corr_RCV_pca, "corr_matrix_for_RCV_pca.csv") #send to a csv file to check out more easily
+
+RCV_pca_3<- RCV_pca_2 %>% 
+  select(-1,-3) # remove WASI Vocab and WJ_Comp which are column 1 and 3 in tibble
+str(RCV_pca_3)
+
+corr_RCV_pca_2 <- cor(RCV_pca_3)#checking correlations again
+
+corr_RCV_pca_2
+
+write.csv(corr_RCV_pca_2, "corr_matrix_for_RCV_pca.csv")#send to a csv file to check out
+#all correlations below .899
+```
+## Scaling Variables
+All variables were scaled using psych. Scaling the variables eliminated the concern that a variable would appear to explain more variance in the PCA just because it was measured on a large scale with larger variance. After scaling, descriptives were printed and checked to make sure means were all 0 and standard deviations were 1. 
+```{r}
+library(psych) #library needed for scaling and getting descriptives
+
+scaled_data_pca <- RCV_pca_3 %>% #create new scaled vairable tibble
+  mutate_at(c(1:19), ~(scale(.) %>% as.vector)) #scale everything
+
+str(scaled_data_pca)
+psych::describe(scaled_data_pca) #gives you a lot of descriptives quickly
+#all means are 0 and SD are 1, which is what they should be
+```
+## PCA Visualization
+To better understand the data that was being used in the analysis, a basic PCA was run using each variable as a component and then visualized using factoextra. The visualization placed variables closer together in the same quadrant if they were more related. The stronger contributors to the model were warmer colors and the weaker contributors were cooler colors. The results showed many of the expected groupings(decoding, language and EF) starting to form and decoding and language variables as stronger contributors. The BRIEF is rated on an inverse scale, meaning that higher scores indicate worse EF. This explained why the BRIEF was located in a different quadrant than any other measure. 
+
+**This is not the final PCA**
+
+```{r}
+library(factoextra) #extract and visualize the output of multivariate data analyses, including 'PCA'
+
+#line below runs a simple PCA with a component for each variable. 
+viz_pca <- prcomp(scaled_data_pca, center = TRUE,scale. = TRUE)
+
+#Graph of variables. Positive correlated variables point to the same side of the plot. Negative correlated variables point to opposite sides of the graph.
+fviz_pca_var(viz_pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE #Avoid overlapping text if possible 
+             )
+
+```
+
+## Bartlett's Test
+The Bartlett's test was run to determine if the R-matrix was an identity matrix. A significant p-value, < 0.05 indicated that the matrix was not an identity matrix. 
+```{r}
+cortest.bartlett(scaled_data_pca, 223) #223 equals sample size
+# p value below .05, so it is not an identity matrix. This is good.
+```
+
+## KMO
+The Kaiser-Meyer-Olkin (KMO) index is a Measure of Sampling Adequacy (MSA). It was run to measure sampling adequacy for each variable in the model and for the complete model. All statistics were .8 or above, indicating that there was sufficient shared variance among variables.  
+
+```{r}
+KMO(scaled_data_pca)
+```
+
+## Base PCA & Residuals
+A base PCA was run with all 19 available variables to determine eigenvalues or sums of squared loadings. These provided the amount of variance each factor explained. There were 3 sums of squared loadings that were greater than 1, meeting Kaiser's criterion for inclusion as a component. Then a scree plot was created to visually see the eigenvalues plotted against the number of factors. There was a striking "elbow" at 2 factors and a much smaller one at 3 factors, indicating that 2 or 3 factors were best for the variables provided. From there, another priniciple component analysis was run using 3 factors. 3 was chosen because it was aligned with the sum of squared loadings and with theory about these measures. 
+
+### Base PCA
+```{r}
+pca_base <- principal(scaled_data_pca, nfactors = 19, rotate = "none") #base pca with all 19 variables
+
+pca_base #results= 3 SS with values higher than 1, so possibly 3 factors here based on that info alone
+
+plot(pca_base$values, type = "b")#makes a scree plot using eigen values stored in pca_base$values, 
+#plots the eigenvalues (y) against the factor number (x)
+#type = 'b' both gives you a line and points on the same graph
+#check for how many variables it indicates by the "elbow" seen visually in graph
+# big elbow at 2 
+```
+### Residuals Check
+ 
+A PCA was run with the 3 factors decided in the previous step. A correlation matrix was created from the correlations of the scaled scores. Then the residuals of that correlation matrix were compared to the residuals of the PCA factor loadings. A histogram was called to check for a normal distribution of residuals. The residuals were relatively normal, with what looked to be a few outliers. 
+```{r}
+pca_resid <- principal(scaled_data_pca, nfactors = 3, rotate = "none")
+pca_resid #results. 3 looks ok. 2 may be better based on the picture but I want 3 to fit the research question.
+
+corMatrix<-cor(scaled_data_pca)#require correlation matrix for final data
+#corMatrix
+
+residuals<-factor.residuals(corMatrix, pca_resid$loadings)#create an object from the correlation matrix and the pca loading. Call it residuals. It will contain the factor residuals
+
+hist(residuals) #are the residuals normally distributed? that is an assumption of a PCA is that it is normally distributed. 
+```
+
+## Final PCA 
+The final PCa was run using 3 factors and an oblique rotation to account for the relatedness of the factors. 
+The final PCA was plotted to show how well each component's observations clustered together compared to the other components. A factor analysis diagram was also created to more clearly show which variables loaded onto the components and how the components wre realted to one another. Output showed that Factor 1 explained the most variance, followed by factor 1. Factor 3 explained the least variance. The visualization showed that the factors separated themselves pretty well. The morpohologial measures appeared to be on the line between Component 1 and Component 2, making the separation between those two components less clear. The component analysis diagram showed that Factors 1 and 2 were highly correlated (r=.6) while Factor 3 was not correlated with either of the other factors. 
+
+```{r}
+pca_final <- principal(scaled_data_pca, nfactors = 3, rotate = "promax") #Since factors should be related, use oblique technique (promax)
+pca_final #results. 
+
+print.psych(pca_final, cut = 0.3, sort = TRUE)#makes results easier to read by only including loadings over .3 (think of medium correlation)
+```
+### Final PCA Plot
+```{r}
+plot(pca_final) #The far right on each box shows where the component's observations cluster compared to each other cluster.
+#component 2 is black
+#component 1 is blue
+#component 3 is red
+
+fa.diagram(pca_final)# shows the factor analysis diagram, including correlations of measures to components and components with each other.
+```
+## Component Names
+Components were named based on what primary concept or skill was represented with the measures that loaded onto the component. 
+
+**Component** 1: _Decoding_
+
+**Component** 2: _Language_ 
+
+**Component** 3: _Executive Function_
+
+## Factor Scores
+
+The factor scores for each observation were collected from the final PCA. The columns were then renamed to reflect the new component names. Finally, the factor scores tibble and the tibble with all vairables and the outcome variable were combined to be used in later analysis. 
+
+```{r}
+pca_final_scores <- as.data.frame(pca_final$scores) #pca scores for each particpant on each factor. You can use these in subsequent analyses
+pca_final_scores
+
+pca_final_scores <- pca_final_scores %>% 
+  rename(Decoding = RC1, Language = RC2, Executive_Function = RC3)#rename columns
+
+RCV_pca_4 <- RCV_pca_2 %>% 
+  select(-3) # Made a tibble that didn't have WASI but did have WJ comprehension
+  
+final_data <- cbind(RCV_pca_4, pca_final_scores)#combine this dataframe with earlier dataframe (RCV_pca_4)
+str(final_data)
+
+write.csv(final_data,"pca_scores_final_df.csv", row.names=FALSE) #create a csv of the final data
+
+```
+# Data Modeling
+To answer research question 2, the data needed to be modeled with reading comprehension as the outcome variable and the three components from the PCA as the predictor variables. The regression model was the result of a multicollinearity check, 10-fold cross-validation and stepwise feature selection. 
+
+## Multicollinearity Check
+Correlations were run on all components of interest to check for multicollinearity. This made sure components that were too similar were not included in cross validation and feature selection. No component was correlated with another component above .7, so all three components were kept. Visualization matrices were created using corrplot. 
+```{r}
+RCV_reg <- read_csv("pca_scores_final_df.csv") %>% 
+  select(1,21:23)
+
+cor(RCV_reg)
+
+library(corrplot) #install the library that allows you to make pretty correlation charts
+cor_matrix <- (cor(RCV_reg)) #create a data set of the correlations of all RCV data to use in the pretty correlation charts
+
+corrplot(cor_matrix, 
+         type="lower", #put color strength on bottom
+         tl.pos = "ld", #Character or logical, position of text labels, 'ld'(default if type=='lower') means left and diagonal,
+         tl.cex = .7, #Numeric, for the size of text label (variable names).
+         method="color", 
+         addCoef.col="black", 
+         diag=FALSE,
+         tl.col="black", #The color of text label.
+         tl.srt=45, #Numeric, for text label string rotation in degrees, see text
+         is.corr = FALSE, #if you include correlation matrix
+         #order = "hclust", #order results by strength
+         #col=gray.colors(100), #in case you want it in gray...
+         number.digits = 2) #number of digits after decimal
+#all correlations were the expected direction. 
+```
+## Cross Validation & Feature Selection 
+To decide the most credible model for predicting reading comprehension, a 10-fold cross validation method was used. First, a seed was set up for easy replication of the cross-validation sets in the future. Then the model was set up to use 10-fold cross validation, meaning the model held out a group of 10 observations to use to test the model after training on the remainder of observations. Stepwise feature selection was then used to determine how many variables and which variables were most predictive of reading comprehension. 
+
+### Cross Validation Set-up
+```{r}
+library(caret) # library needed for cross validation and feature selection
+
+set.seed(123)#set seed for replication of cross-validation at later time
+
+# Set up repeated 10-fold cross-validation
+train_control <- trainControl(method = "cv", number = 10)
+#method = cross validation, number = ten times (10 fold cross-validation)
+```
+### Feature Selection
+```{r}
+#the LM model used
+lm_cv10_step <- train(WJ_Reading_Comprehension ~ ., 
+                data = RCV_reg,
+                method = "leapSeq", #stepwise selection 
+                           tuneGrid = data.frame(nvmax = 1:3), #using 1-7 predictors that we still have after multicollinearity check
+                           trControl = train_control)
+                
+#the model
+summary(lm_cv10_step)
+```
+
+### Final Model Selection 
+The 10-fold cross validation and the stepwise feature selection resulted in a best tuned model with 2 predictors. The results showed that this model had the lowest RMSE and highest R-squared. This model's coefficients for each predictor were checked for suppression effects. All coefficients directionally aligned with the correlations from earlier steps, showing no suppression effects. The final linear regression model was run with reading comprehension predicted by the two predictors selected in machine learning. This provided the necessary statistical outputs (t-values, p-values, etc.) that are useful and interpretable across fields. 
+ 
+```{r}
+#best tuned model
+lm_cv10_step$bestTune #2 predictors
+
+lm_cv10_step$results #confirm that model with 2 predictors has the lowest RMSE and highest Rsquared
+
+#co-efficients for model using 2 variables
+coef(lm_cv10_step$finalModel, 2) #check for any suppression effects. all match the correlation direction
+
+#final linear model
+final_lm <- lm(WJ_Reading_Comprehension~ Decoding + Language, data = RCV_reg) #include the 2 predictors from feature selection
+summary(final_lm) # this shows the statistical info for the model chosen through cv and feature selection
+```
+## Visualization
+A visualization of the residuals of the final linear model was created using ggplot. The actual values for reading comprehension came from the original data while the predicted values came from the linear regression model. 
+
+```{r}
+library(ggplot2)
+actual <- RCV_reg$WJ_Reading_Comprehension
+fitted <- unname(final_lm$fitted.values) #would have been a named number vector if unname not used
+#grab up the fitted values from the regression model
+
+act_fit <- cbind.data.frame(actual, fitted) #cbind binds the two vectors into a dataframe
+
+ggplot(act_fit, aes(x = actual, y = fitted)) +
+  geom_point() +
+  xlab("Actual values") +
+  ylab("Predicted values") +
+  ggtitle("Scatterplot for actual and fitted values") +
+  geom_abline(intercept = 1,
+              slope = 1,
+              color = "blue",
+              linewidth = 2)
+```
+
+# Discussion
+
+## Research Question 1
+The result of the PCA indicated that variables related to decoding, language comprehension and executive function could be reduced into components. Further, the PCA resulted in three components that matched the initial variable categories of language comprehension, decoding and executive function. The language component had the most variables that loaded onto it, reflecting the broad range of tasks that tapped into some aspect of language. Most variables loaded onto the theoretically expected component, however there were a few that did not. Morphology variables were of note in the PCA because they split among two components instead of all loading onto the same component. Even though morphological decomposition loaded onto decoding, it had a similar factor loading for language. Morphological derivation loaded onto language but had a similar loading onto decoding. These weaker factor loadings made the separation of decoding and language less clear in the cluster plot. The only EF variable that did not load onto the EF component was the DKEFS Card Sorting sub-test. Because it was an EF task that required more verbal communication to complete, this loading made sense. 
+
+## Research Question 2
+The 10-fold cross validation and stepwise feature selection resulted in a model that included just two of the three original components, decoding and language. These two components accounted for 67.16% of the variance in reading comprehension outcomes. Based on the final linear regression model, language and decoding were both significant  predictors (t = 9.70, p < .0001 and t = 8.91, p < .0001 respectively). However, language had a slightly higher parameter estimate than decoding, which meant there was a larger increase in reading comprehension with a one unit increase in language comprehension compared to a one unit increase in decoding. EF did not survive the feature selection process, indicating that the machine learning model was able to best predict reading comprehension outcomes without EF included. This result supported the Simple View of Reading which only includes decoding and language comprehension as the two components of reading comprehension.
+
+# References
+Aboud, K.S., Barquero, L.A., & Cutting, L.E. (2018). Prefrontal mediation of the reading network predicts intervention response in dyslexia. Cortex, 101, 96–106. https://doi-org.proxy.library.vanderbilt.edu/10.1016/j.cortex
+
+Cutting LE, Bailey SK, Barquero LA, & Aboud K (2015). Neurobiological bases of word recognition and reading comprehension In Connor CM & McCardle P (Eds.), Advances in reading intervention: Research to practice to research (pp. 73–84). Baltimore, MD: Brookes Publishing.
+
+Gough, P. B., & Tunmer, W. E. (1986). Decoding, reading, and reading disability. Remedial and special education, 7(1), 6-10. https://doi.org/10.1177/074193258600700104
+
+Locascio, G., Mahone, E. M., Eason, S. H., & Cutting, L. E. (2010). Executive dysfunction among children with reading comprehension deficits. Journal of Learning Disabilities, 43(5), 441-454. https://doi.org/10.1177/0022219409355476
+
+Rabiner, D. L., Godwin, J., & Dodge, K. A. (2016). Predicting academic achievement and attainment: The contribution of early academic skills, attention difficulties, and social competence. School	Psychology Review, 45(2), 250-267.https://doi.org/10.17105/SPR45-2.250-267
